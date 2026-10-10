@@ -197,8 +197,8 @@ if(WIN32)
   target_link_libraries(wwhd PRIVATE winmm ws2_32 advapi32)  # timeBeginPeriod (main.cpp), Cemuhook client sockets (motion/dsu.cpp)
 endif()
 if(WWHD_HAS_METAL)
-  target_compile_definitions(wwhd PRIVATE WWHD_HAS_METAL=1)
-  target_link_libraries(wwhd PRIVATE "-framework Metal" "-framework QuartzCore" "-framework AppKit" "-framework Foundation" "-framework ImageIO" "-framework UniformTypeIdentifiers" "-framework GameController" "-framework Carbon" "-framework AudioToolbox" "-framework CoreAudio" compression)
+   target_compile_definitions(wwhd PRIVATE WWHD_HAS_METAL=1)
+   target_link_libraries(wwhd PRIVATE "-framework Metal" "-framework QuartzCore" "-framework AppKit" "-framework Foundation" "-framework ImageIO" "-framework UniformTypeIdentifiers" "-framework GameController" "-framework Ga[...]
 endif()
 if(WWHD_HAS_VULKAN)
   # VK_NO_PROTOTYPES: the renderer loads every Vulkan function at run time (gfx/vulkan/loader.h), so the
