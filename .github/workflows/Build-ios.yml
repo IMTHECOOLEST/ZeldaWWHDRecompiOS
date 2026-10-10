@@ -1,0 +1,386 @@
+name: iOS IPA Build with GameController & File Picker
+
+on:
+  workflow_dispatch:
+    inputs:
+      aspect_ratio:
+        description: Aspect Ratio
+        required: true
+        default: "10:7"
+        type: choice
+        options:
+          - "16:9"
+          - "10:7"
+          - "16:10"
+          - "21:9"
+          - "32:9"
+
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      IOS_SDK: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
+      APP_NAME: ZeldaWWHD
+      APP_VERSION: 0.2.11
+      ASPECT_RATIO: ${{ github.event.inputs.aspect_ratio || '10:7' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -eux
+          xcode-select -p
+          xcodebuild -version
+          brew install cmake ninja python@3.12 zstd
+          python3 --version
+
+      - name: Create iOS app with GameController & FilePicker support
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p ios/ZeldaWWHD/Resources
+          mkdir -p ios/ZeldaWWHD/Sources
+          mkdir -p ios/ZeldaWWHD/Assets.xcassets/AppIcon.appiconset
+
+          cat > ios/ZeldaWWHD/Sources/AppDelegate.mm <<'EOFAPP'
+          #import <UIKit/UIKit.h>
+          #import <Metal/Metal.h>
+          #import <MetalKit/MetalKit.h>
+          #import <GameController/GameController.h>
+          #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+
+          extern "C" {
+              int wwhd_main(int argc, char** argv);
+              void wwhd_handle_gamepad_input(int padIndex, const char* buttonName, int pressed);
+              void wwhd_set_aspect_ratio(const char* ratio);
+          }
+
+          @interface GamepadManager : NSObject
+          - (instancetype)init;
+          - (void)setupGamepadMonitoring;
+          @end
+
+          @implementation GamepadManager
+
+          - (instancetype)init {
+              self = [super init];
+              if (self) {
+                  [self setupGamepadMonitoring];
+              }
+              return self;
+          }
+
+          - (void)setupGamepadMonitoring {
+              [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification
+                  object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+                  [self configureController:(GCController *)note.object];
+              }];
+              [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidDisconnectNotification
+                  object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+              }];
+              [GCController startWirelessControllerDiscoveryWithCompletionHandler:^{}];
+          }
+
+          - (void)configureController:(GCController *)controller {
+              if (!controller) return;
+              GCExtendedGamepad *pad = controller.extendedGamepad;
+              if (!pad) return;
+
+              NSInteger padIndex = [GCController controllers].count;
+              pad.buttonA.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "A", pressed ? 1 : 0);
+              };
+              pad.buttonB.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "B", pressed ? 1 : 0);
+              };
+              pad.buttonX.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "X", pressed ? 1 : 0);
+              };
+              pad.buttonY.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "Y", pressed ? 1 : 0);
+              };
+              pad.dpad.up.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "DPAD_UP", pressed ? 1 : 0);
+              };
+              pad.dpad.down.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "DPAD_DOWN", pressed ? 1 : 0);
+              };
+              pad.dpad.left.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "DPAD_LEFT", pressed ? 1 : 0);
+              };
+              pad.dpad.right.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "DPAD_RIGHT", pressed ? 1 : 0);
+              };
+              pad.leftShoulder.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "L", pressed ? 1 : 0);
+              };
+              pad.rightShoulder.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                  wwhd_handle_gamepad_input((int)padIndex, "R", pressed ? 1 : 0);
+              };
+              pad.leftThumbstick.valueChangedHandler = ^(GCControllerDirectionPad *dpad, float xValue, float yValue) {
+                  wwhd_handle_gamepad_input((int)padIndex, "LSTICK_X", (int)(xValue * 127));
+                  wwhd_handle_gamepad_input((int)padIndex, "LSTICK_Y", (int)(yValue * 127));
+              };
+              pad.rightThumbstick.valueChangedHandler = ^(GCControllerDirectionPad *dpad, float xValue, float yValue) {
+                  wwhd_handle_gamepad_input((int)padIndex, "RSTICK_X", (int)(xValue * 127));
+                  wwhd_handle_gamepad_input((int)padIndex, "RSTICK_Y", (int)(yValue * 127));
+              };
+          }
+          @end
+
+          @interface DocumentPickerDelegate : NSObject <UIDocumentPickerDelegate>
+          @property (nonatomic, copy) void (^completionHandler)(NSURL *);
+          @end
+
+          @implementation DocumentPickerDelegate
+          - (void)documentPicker:(UIDocumentPickerViewController *)controller
+              didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+              if (urls.count > 0 && self.completionHandler) {
+                  self.completionHandler(urls[0]);
+              }
+          }
+          @end
+
+          @interface AppDelegate : UIResponder <UIApplicationDelegate>
+          @property (nonatomic, strong) UIWindow *window;
+          @property (nonatomic, strong) GamepadManager *gamepadManager;
+          @end
+
+          @implementation AppDelegate
+
+          - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+              self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+              UIViewController *vc = [[UIViewController alloc] init];
+              vc.view.backgroundColor = [UIColor blackColor];
+              self.window.rootViewController = vc;
+              self.window.backgroundColor = [UIColor blackColor];
+              [self.window makeKeyAndVisible];
+
+              self.gamepadManager = [[GamepadManager alloc] init];
+
+              NSString *ratio = @"10:7";
+              wwhd_set_aspect_ratio([ratio UTF8String]);
+
+              [self presentGameFolderPicker:vc];
+
+              return YES;
+          }
+
+          - (void)presentGameFolderPicker:(UIViewController *)parentVC {
+              if (@available(iOS 14, *)) {
+                  UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+                      initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];
+                  DocumentPickerDelegate *delegate = [[DocumentPickerDelegate alloc] init];
+                  picker.delegate = delegate;
+                  delegate.completionHandler = ^(NSURL *selectedURL) {
+                      [self startGameWithFolderPath:[selectedURL path]];
+                  };
+                  [parentVC presentViewController:picker animated:YES completion:nil];
+              } else {
+                  [self startGameWithFolderPath:nil];
+              }
+          }
+
+          - (void)startGameWithFolderPath:(NSString *)folderPath {
+              dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                  int argc = 1;
+                  const char *argv[] = { "wwhd", NULL };
+                  if (folderPath) {
+                      argc = 2;
+                      const char *path = [folderPath UTF8String];
+                      argv[1] = path;
+                  }
+                  wwhd_main(argc, (char**)argv);
+              });
+          }
+
+          @end
+
+          int main(int argc, char * argv[]) {
+              @autoreleasepool {
+                  return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+              }
+          }
+          EOFAPP
+
+          cat > ios/ZeldaWWHD/Sources/GameControllerBridge.cpp <<'EOFBRIDGE'
+          #include <iostream>
+          #include <map>
+          #include <string>
+
+          struct GamepadState {
+              int buttonA = 0;
+              int buttonB = 0;
+              int buttonX = 0;
+              int buttonY = 0;
+              int dpadUp = 0;
+              int dpadDown = 0;
+              int dpadLeft = 0;
+              int dpadRight = 0;
+              int shoulderL = 0;
+              int shoulderR = 0;
+              int lstickX = 0;
+              int lstickY = 0;
+              int rstickX = 0;
+              int rstickY = 0;
+          };
+
+          static GamepadState gGamepads[4];
+
+          extern "C" {
+              void wwhd_handle_gamepad_input(int padIndex, const char* buttonName, int pressed) {
+                  if (padIndex < 0 || padIndex >= 4) return;
+                  GamepadState &pad = gGamepads[padIndex];
+                  std::string button(buttonName);
+
+                  if (button == "A") pad.buttonA = pressed;
+                  else if (button == "B") pad.buttonB = pressed;
+                  else if (button == "X") pad.buttonX = pressed;
+                  else if (button == "Y") pad.buttonY = pressed;
+                  else if (button == "DPAD_UP") pad.dpadUp = pressed;
+                  else if (button == "DPAD_DOWN") pad.dpadDown = pressed;
+                  else if (button == "DPAD_LEFT") pad.dpadLeft = pressed;
+                  else if (button == "DPAD_RIGHT") pad.dpadRight = pressed;
+                  else if (button == "L") pad.shoulderL = pressed;
+                  else if (button == "R") pad.shoulderR = pressed;
+                  else if (button == "LSTICK_X") pad.lstickX = pressed;
+                  else if (button == "LSTICK_Y") pad.lstickY = pressed;
+                  else if (button == "RSTICK_X") pad.rstickX = pressed;
+                  else if (button == "RSTICK_Y") pad.rstickY = pressed;
+              }
+
+              const GamepadState* wwhd_get_gamepad_state(int padIndex) {
+                  if (padIndex < 0 || padIndex >= 4) return nullptr;
+                  return &gGamepads[padIndex];
+              }
+          }
+          EOFBRIDGE
+
+          cat > ios/ZeldaWWHD/Sources/FilePickerBridge.mm <<'EOFFILE'
+          #import <Foundation/Foundation.h>
+          #import <UIKit/UIKit.h>
+          #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+
+          typedef void (*FilePickerCallback)(const char*);
+          static FilePickerCallback gFilePickerCallback = nil;
+
+          @interface FilePickerManager : NSObject <UIDocumentPickerDelegate>
+          @end
+
+          @implementation FilePickerManager
+          - (void)documentPicker:(UIDocumentPickerViewController *)controller
+              didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+              if (urls.count > 0 && gFilePickerCallback) {
+                  NSURL *url = urls[0];
+                  const char *path = [[url path] UTF8String];
+                  gFilePickerCallback(path);
+              }
+          }
+          @end
+
+          extern "C" {
+              void wwhd_set_aspect_ratio(const char* ratio) {
+                  NSLog(@"[WWHD] Aspect ratio: %s", ratio);
+              }
+
+              void wwhd_open_file_picker(const char* documentType, FilePickerCallback callback) {
+                  gFilePickerCallback = callback;
+
+                  dispatch_async(dispatch_get_main_queue(), ^(void) {
+                      UIDocumentPickerViewController *picker = nil;
+
+                      if (@available(iOS 14, *)) {
+                          if (strcmp(documentType, "folder") == 0) {
+                              picker = [[UIDocumentPickerViewController alloc]
+                                  initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];
+                          } else if (strcmp(documentType, "image") == 0) {
+                              picker = [[UIDocumentPickerViewController alloc]
+                                  initForOpeningContentTypes:@[UTTypeImage] asCopy:NO];
+                          } else {
+                              picker = [[UIDocumentPickerViewController alloc]
+                                  initForOpeningContentTypes:@[UTTypeData] asCopy:NO];
+                          }
+                      }
+
+                      if (picker) {
+                          FilePickerManager *delegate = [[FilePickerManager alloc] init];
+                          picker.delegate = delegate;
+                          UIViewController *rootVC = [[UIApplication sharedApplication].windows firstObject].rootViewController;
+                          [rootVC presentViewController:picker animated:YES completion:nil];
+                      }
+                  });
+              }
+          }
+          EOFFILE
+
+          cat > ios/ZeldaWWHD/Resources/Info.plist <<'EOFPLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>en</string>
+              <key>CFBundleExecutable</key>
+              <string>$(EXECUTABLE_NAME)</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.example.zelda.wwhd</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>Zelda WWHD</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>0.2.11</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>MinimumOSVersion</key>
+              <string>15.0</string>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationLandscapeLeft</string>
+                  <string>UIInterfaceOrientationLandscapeRight</string>
+              </array>
+              <key>AspectRatio</key>
+              <string>10:7</string>
+              <key>NSGameControllerUsersCanPair</key>
+              <true/>
+              <key>GCSupportedGameControllerFormats</key>
+              <array>
+                  <string>Profile Extended Gamepad</string>
+                  <string>Profile Micro Gamepad</string>
+              </array>
+              <key>UIFileSharingEnabled</key>
+              <true/>
+              <key>LSSupportsOpeningDocumentsInPlace</key>
+              <true/>
+              <key>NSDocumentsFolderUsageDescription</key>
+              <string>Wind Waker HD needs access to your game files folder</string>
+          </dict>
+          </plist>
+          EOFPLIST
+
+          cat > ios/ZeldaWWHD/Resources/ZeldaWWHD.entitlements <<'EOFENT'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC " -//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-*
+
