@@ -382,5 +382,35 @@ jobs:
 
           cat > ios/ZeldaWWHD/Resources/ZeldaWWHD.entitlements <<'EOFENT'
           <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC " -//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-*
-
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.developer.files.documents.public</key>
+              <true/>
+              <key>com.apple.developer.usernotifications.editing</key>
+              <true/>
+          </dict>
+          </plist>
+          EOFENT
+
+      - name: Build iOS app
+        shell: bash
+        run: |
+          set -eux
+          cd ios/ZeldaWWHD
+          xcodebuild -scheme ZeldaWWHD -configuration Release -sdk iphoneos -derivedDataPath build
+
+      - name: Create IPA
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p ZeldaWWHD.ipa/Payload
+          cp -r ios/ZeldaWWHD/build/Release-iphoneos/ZeldaWWHD.app ZeldaWWHD.ipa/Payload/
+          cd ZeldaWWHD.ipa
+          zip -r ../ZeldaWWHD-${{ env.APP_VERSION }}.ipa .
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ZeldaWWHD-iOS-IPA
+          path: ZeldaWWHD-${{ env.APP_VERSION }}.ipa
