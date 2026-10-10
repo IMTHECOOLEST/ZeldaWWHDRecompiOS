@@ -17,6 +17,7 @@ on:
 
   push:
     branches: [ main ]
+
   pull_request:
     branches: [ main ]
 
@@ -49,10 +50,10 @@ jobs:
           set -eux
           xcode-select -p
           xcodebuild -version
-          brew install cmake ninja python@3.12 zstd
+          brew install cmake ninja python@3.12 zstd xcodegen
           python3 --version
 
-      - name: Create iOS app with GameController & FilePicker support
+      - name: Create iOS app scaffolding
         shell: bash
         run: |
           set -eux
@@ -393,19 +394,62 @@ jobs:
           </plist>
           EOFENT
 
+          cat > ios/ZeldaWWHD/project.yml <<'EOFPROJ'
+          name: ZeldaWWHD
+          options:
+            bundleIdPrefix: com.example.zelda
+            deploymentTarget:
+              iOS: "15.0"
+            createIntermediateGroups: true
+          targets:
+            ZeldaWWHD:
+              type: application
+              platform: iOS
+              sources:
+                - path: Sources
+              resources:
+                - path: Resources
+              settings:
+                PRODUCT_BUNDLE_IDENTIFIER: com.example.zelda.wwhd
+                MARKETING_VERSION: 0.2.11
+                CURRENT_PROJECT_VERSION: 1
+                TARGETED_DEVICE_FAMILY: 1
+                CODE_SIGNING_ALLOWED: NO
+                CODE_SIGNING_REQUIRED: NO
+                SUPPORTS_MACCATALYST: NO
+                INFOPLIST_FILE: Resources/Info.plist
+                ENABLE_BITCODE: NO
+              entitlements:
+                path: Resources/ZeldaWWHD.entitlements
+          EOFPROJ
+
+      - name: Generate Xcode project
+        shell: bash
+        run: |
+          set -eux
+          cd ios/ZeldaWWHD
+          xcodegen generate
+
       - name: Build iOS app
         shell: bash
         run: |
           set -eux
           cd ios/ZeldaWWHD
-          xcodebuild -scheme ZeldaWWHD -configuration Release -sdk iphoneos -derivedDataPath build
+          xcodebuild \
+            -project ZeldaWWHD.xcodeproj \
+            -scheme ZeldaWWHD \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Create IPA
         shell: bash
         run: |
           set -eux
           mkdir -p ZeldaWWHD.ipa/Payload
-          cp -r ios/ZeldaWWHD/build/Release-iphoneos/ZeldaWWHD.app ZeldaWWHD.ipa/Payload/
+          cp -r ios/ZeldaWWHD/build/Build/Products/Release-iphoneos/ZeldaWWHD.app ZeldaWWHD.ipa/Payload/
           cd ZeldaWWHD.ipa
           zip -r ../ZeldaWWHD-${{ env.APP_VERSION }}.ipa .
 
